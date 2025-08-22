@@ -33,7 +33,7 @@ if ($data["event"] === "message") {
             $reply = callGeminiAI($body);
             
             // Adiciona assinatura do autor
-            $reply .= "\n\n---\n*Assistente IA criado por [Seu Nome]*";
+            $reply .= "\n\n---\n*Assistente IA criado por Milton Diogo*";
         }
 
         // Envia resposta pelo WAHA
@@ -192,4 +192,5 @@ function callGeminiAI($message) {
     file_put_contents($logFile, date("Y-m-d H:i:s") . " - Estrutura inesperada: " . substr(print_r($json, true), 0, 500) . "\n", FILE_APPEND);
     return "Desculpe, não consegui processar sua solicitação. Poderia reformular sua pergunta?";
 }
+
 
