@@ -38,8 +38,11 @@ if ($data["event"] === "message") {
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
         $resp = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
+        file_put_contents($logFile, date("Y-m-d H:i:s") . " - WAHA HTTP Code: " . $httpCode . "\n", FILE_APPEND);
+        file_put_contents($logFile, date("Y-m-d H:i:s") . " - WAHA Response: " . $resp . "\n", FILE_APPEND);
         file_put_contents($logFile, date("Y-m-d H:i:s") . " - Resposta enviada: " . $reply . "\n", FILE_APPEND);
     }
 }
@@ -73,20 +76,28 @@ function callGeminiAI($message) {
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
     $resp = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
     // Log completo para debug
-    file_put_contents(__DIR__ . "/webhook_log.txt", date("Y-m-d H:i:s") . " - Gemini raw: " . $resp . "\n", FILE_APPEND);
+    $logFile = __DIR__ . "/webhook_log.txt";
+    file_put_contents($logFile, date("Y-m-d H:i:s") . " - Gemini HTTP Code: " . $httpCode . "\n", FILE_APPEND);
+    file_put_contents($logFile, date("Y-m-d H:i:s") . " - Gemini raw response: " . $resp . "\n", FILE_APPEND);
 
     $json = json_decode($resp, true);
 
-    // Extrai o texto retornado pela Gemini
-    if (isset($json['output'][0]['content'][0]['text'])) {
-        return $json['output'][0]['content'][0]['text'];
+    // Verifica se há erro na resposta
+    if (isset($json['error'])) {
+        file_put_contents($logFile, date("Y-m-d H:i:s") . " - Gemini error: " . $json['error']['message'] . "\n", FILE_APPEND);
+        return "Desculpe, estou com problemas técnicos no momento.";
     }
 
-    return "Desenvolvendo ";
+    // Extrai o texto retornado pela Gemini (estrutura correta conforme documentação)
+    if (isset($json['candidates'][0]['content']['parts'][0]['text'])) {
+        return $json['candidates'][0]['content']['parts'][0]['text'];
+    }
+
+    // Log de estrutura inesperada para debug
+    file_put_contents($logFile, date("Y-m-d H:i:s") . " - Estrutura inesperada: " . print_r($json, true) . "\n", FILE_APPEND);
+    return "Desenvolvendo";
 }
-
-
-
