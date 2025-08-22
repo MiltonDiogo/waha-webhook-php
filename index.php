@@ -2,7 +2,6 @@
 // webhook.php
 
 $logFile = __DIR__ . "/webhook_log.txt";
-$contextFile = __DIR__ . "/context_cache.json";
 
 // Recebe POST do WAHA
 $input = file_get_contents("php://input");
@@ -26,23 +25,15 @@ if ($data["event"] === "message") {
 
     // Evita responder mensagens enviadas por ele mesmo
     if (!$isFromMe) {
-        // Carrega contexto anterior se existir
-        $context = loadContext($phoneNumber);
-        
         // Verifica se é um comando especial primeiro
-        $reply = handleSpecialCommands($body, $phoneNumber, $context);
+        $reply = handleSpecialCommands($body, $phoneNumber);
         
-        // Se não é comando especial, chama a Gemini com contexto
+        // Se não é comando especial, chama a Gemini
         if ($reply === null) {
-            $reply = callGeminiAI($body, $context);
+            $reply = callGeminiAI($body);
             
-            // Atualiza o contexto com a nova interação
-            updateContext($phoneNumber, $body, $reply);
-            
-            // Adiciona assinatura do autor (apenas na primeira mensagem da conversa)
-            if (empty($context['conversation'])) {
-                $reply .= "\n\n---\n*Assistente IA criado por Milton Diogo*";
-            }
+            // Adiciona assinatura do autor
+            $reply .= "\n\n---\n*Assistente IA criado por Milton Diogo*";
         }
 
         // Envia resposta pelo WAHA
@@ -57,8 +48,8 @@ if ($data["event"] === "message") {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json"]);
         curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload)); // CORREÇÃO AQUI: POSTFIELDS (não POSTFELDS)
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10); // Timeout de 10 segundos
         $resp = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
@@ -76,86 +67,11 @@ echo "OK";
 // Funções auxiliares
 
 function extractPhoneNumber($from) {
+    // Remove @c.us e outros sufixos para obter apenas o número
     return preg_replace('/@.*/', '', $from);
 }
 
-function loadContext($phoneNumber) {
-    $contextFile = __DIR__ . "/context_cache.json";
-    
-    if (!file_exists($contextFile)) {
-        return ['conversation' => []];
-    }
-    
-    $contextData = json_decode(file_get_contents($contextFile), true) ?? ['conversations' => []];
-    
-    // Limpa contextos antigos (mais de 1 hora)
-    if (isset($contextData['conversations'])) {
-        foreach ($contextData['conversations'] as $number => $conversation) {
-            if (time() - $conversation['last_activity'] > 3600) { // 1 hora
-                unset($contextData['conversations'][$number]);
-            }
-        }
-    }
-    
-    return $contextData['conversations'][$phoneNumber] ?? [
-        'conversation' => [],
-        'last_activity' => time(),
-        'message_count' => 0
-    ];
-}
-
-function saveContext($contextData) {
-    $contextFile = __DIR__ . "/context_cache.json";
-    
-    // Mantém apenas as 50 conversas mais recentes para não sobrecarregar
-    if (count($contextData['conversations']) > 50) {
-        // Ordena por última atividade e mantém apenas as 50 mais recentes
-        uasort($contextData['conversations'], function($a, $b) {
-            return $b['last_activity'] - $a['last_activity'];
-        });
-        $contextData['conversations'] = array_slice($contextData['conversations'], 0, 50, true);
-    }
-    
-    file_put_contents($contextFile, json_encode($contextData));
-}
-
-function updateContext($phoneNumber, $userMessage, $assistantReply) {
-    $contextFile = __DIR__ . "/context_cache.json";
-    
-    // Carrega contexto existente
-    $contextData = file_exists($contextFile) ? 
-                  json_decode(file_get_contents($contextFile), true) : 
-                  ['conversations' => []];
-    
-    // Inicializa se não existir
-    if (!isset($contextData['conversations'][$phoneNumber])) {
-        $contextData['conversations'][$phoneNumber] = [
-            'conversation' => [],
-            'last_activity' => time(),
-            'message_count' => 0
-        ];
-    }
-    
-    // Adiciona nova mensagem ao histórico (limita a 10 trocas)
-    $contextData['conversations'][$phoneNumber]['conversation'][] = [
-        'user' => $userMessage,
-        'assistant' => $assistantReply,
-        'timestamp' => time()
-    ];
-    
-    // Mantém apenas as últimas 10 trocas
-    if (count($contextData['conversations'][$phoneNumber]['conversation']) > 10) {
-        array_shift($contextData['conversations'][$phoneNumber]['conversation']);
-    }
-    
-    // Atualiza contador e última atividade
-    $contextData['conversations'][$phoneNumber]['last_activity'] = time();
-    $contextData['conversations'][$phoneNumber]['message_count']++;
-    
-    saveContext($contextData);
-}
-
-function handleSpecialCommands($message, $phoneNumber, $context) {
+function handleSpecialCommands($message, $phoneNumber) {
     $message = strtolower(trim($message));
     
     switch ($message) {
@@ -164,8 +80,6 @@ function handleSpecialCommands($message, $phoneNumber, $context) {
         case 'oi':
         case 'olá':
         case 'ola':
-            // Limpa o contexto ao iniciar nova conversa
-            clearContext($phoneNumber);
             return "Olá! 👋 Eu sou um assistente virtual inteligente.\n\n".
                    "Digite /ajuda para ver os comandos disponíveis.\n".
                    "Digite /sobre para saber mais sobre mim.\n".
@@ -176,17 +90,16 @@ function handleSpecialCommands($message, $phoneNumber, $context) {
         case 'ajuda':
         case 'help':
             return "🤖 *Comandos disponíveis:*\n\n".
-                   "• /start - Iniciar nova conversa (limpa histórico)\n".
+                   "• /start - Iniciar conversa\n".
                    "• /ajuda - Ver esta mensagem\n".
                    "• /sobre - Informações sobre mim\n".
-                   "• /criador - Quem me desenvolveu\n".
-                   "• /limpar - Limpar o histórico da conversa\n\n".
+                   "• /criador - Quem me desenvolveu\n\n".
                    "Ou simplemente faça uma pergunta e eu tentarei ajudar!";
             
         case '/sobre':
         case 'sobre':
             return "🤖 *Sobre mim:*\n\n".
-                   "Eu sou um assistente virtual baseado na tecnologia Gemini AI 2.5 Flash.\n".
+                   "Eu sou um assistente virtual!\n".
                    "Fui desenvolvido para responder perguntas e ajudar com informações diversas.\n\n".
                    "Versão: 1.0\n".
                    "Criador: Milton Diogo";
@@ -194,54 +107,24 @@ function handleSpecialCommands($message, $phoneNumber, $context) {
         case '/criador':
         case 'criador':
             return "👨‍💻 *Meu criador:*\n\n".
-                   "Fui desenvolvido por Milton Diogo como projeto de chatbot WhatsApp.\n".
+                   "Fui desenvolvido pelo Milton Diogo como projeto de chatbot WhatsApp.\n".
                    "Estou sempre evoluindo com novas funcionalidades!\n\n".
-                   "Email: mwmprogramador@gmail.com\n".
-                   "Celular: 959642430";
-            
-        case '/limpar':
-        case 'limpar':
-        case 'clear':
-            clearContext($phoneNumber);
-            return "Histórico da conversa limpo! Começamos uma nova conversa.";
+                   "Entre em contato: mwmprogramador@gmai.com ou 959642430";
             
         default:
             return null; // Não é um comando especial
     }
 }
 
-function clearContext($phoneNumber) {
-    $contextFile = __DIR__ . "/context_cache.json";
-    
-    if (file_exists($contextFile)) {
-        $contextData = json_decode(file_get_contents($contextFile), true) ?? ['conversations' => []];
-        unset($contextData['conversations'][$phoneNumber]);
-        saveContext($contextData);
-    }
-}
-
-// Função para chamar a API Gemini com contexto
-function callGeminiAI($message, $context) {
-    $apiKey = "AIzaSyD7DTONO7vq9jws-pIihvoiQd4RI03pRTU";
+// Função para chamar a API Gemini 2.5 Flash via REST
+function callGeminiAI($message) {
+    $apiKey = "AIzaSyD7DTONO7vq9jws-pIihvoiQd4RI03pRTU"; // <-- coloque sua key
     $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
-    // Personalidade do assistente com instrução para usar contexto
+    // Personalidade do assistente
     $systemInstruction = "Você é um assistente prestativo chamado 'AssistenteIA'. " .
                          "Responda de forma amigável e concisa. Use emojis ocasionalmente. " .
-                         "Se não souber algo, admita honestamente. Mantenha respostas em português. " .
-                         "Use o histórico da conversa para contextualizar suas respostas quando relevante.";
-
-    // Prepara o contexto da conversa
-    $contextMessages = [];
-    if (!empty($context['conversation'])) {
-        foreach ($context['conversation'] as $exchange) {
-            $contextMessages[] = ["role" => "user", "parts" => [["text" => $exchange['user']]]];
-            $contextMessages[] = ["role" => "model", "parts" => [["text" => $exchange['assistant']]]];
-        }
-    }
-    
-    // Adiciona a mensagem atual
-    $contextMessages[] = ["role" => "user", "parts" => [["text" => $message]]];
+                         "Se não souber algo, admita honestamente. Mantenha respostas em português.";
 
     // Monta JSON no padrão oficial da Gemini
     $data = [
@@ -250,7 +133,13 @@ function callGeminiAI($message, $context) {
                 ["text" => $systemInstruction]
             ]
         ],
-        "contents" => $contextMessages,
+        "contents" => [
+            [
+                "parts" => [
+                    ["text" => $message]
+                ]
+            ]
+        ],
         "generationConfig" => [
             "temperature" => 0.7,
             "topK" => 40,
@@ -267,7 +156,7 @@ function callGeminiAI($message, $context) {
     ]);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 15); // Timeout de 15 segundos
     $resp = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curlError = curl_error($ch);
@@ -294,7 +183,7 @@ function callGeminiAI($message, $context) {
         return "Desculpe, estou com problemas técnicos no momento. Por favor, tente novamente mais tarde.";
     }
 
-    // Extrai o texto retornado pela Gemini
+    // Extrai o texto retornado pela Gemini (estrutura correta conforme documentação)
     if (isset($json['candidates'][0]['content']['parts'][0]['text'])) {
         return $json['candidates'][0]['content']['parts'][0]['text'];
     }
