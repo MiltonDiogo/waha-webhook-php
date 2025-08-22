@@ -50,7 +50,7 @@ echo "OK";
 // ----------------------------
 // Função para chamar a API Gemini 2.5 Flash via REST
 function callGeminiAI($message) {
-    $apiKey = "SUA_API_KEY_DO_GEMINI_AQUI"; // <-- coloque sua key
+    $apiKey = "AIzaSyD7DTONO7vq9jws-pIihvoiQd4RI03pRTU"; // <-- coloque sua key
     $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
     // Monta JSON no padrão oficial da Gemini
@@ -87,4 +87,5 @@ function callGeminiAI($message) {
 
     return "Desculpe, não entendi.";
 }
+
 
