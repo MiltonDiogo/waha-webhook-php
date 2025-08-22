@@ -1,0 +1,5 @@
+{
+  "name": "milton/waha-webhook",
+  "description": "Webhook para WAHA em PHP",
+  "require": {}
+}
