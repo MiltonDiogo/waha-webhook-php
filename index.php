@@ -1,68 +1,70 @@
 <?php
 // webhook.php
 
+// Configurações de tempo máximo de execução
+set_time_limit(30); // 30 segundos máximo
+ini_set('max_execution_time', 30);
+
 $logFile = __DIR__ . "/webhook_log.txt";
 
+// Função para logging com formatação consistente
+function logMessage($message) {
+    file_put_contents($GLOBALS['logFile'], date("Y-m-d H:i:s") . " - " . $message . "\n", FILE_APPEND);
+}
+
 // Recebe POST do WAHA
-$input = file_get_contents("php://input");
-file_put_contents($logFile, date("Y-m-d H:i:s") . " - Recebido: " . $input . "\n", FILE_APPEND);
-
-$data = json_decode($input, true);
-if (!$data || !isset($data["event"])) {
-    http_response_code(400);
-    echo "Invalid payload";
-    exit;
-}
-
-// Processa apenas eventos de mensagem
-if ($data["event"] === "message") {
-    $from = $data["payload"]["from"] ?? "";
-    $body = $data["payload"]["body"] ?? "";
-    $isFromMe = $data["payload"]["fromMe"] ?? false;
+try {
+    $input = file_get_contents("php://input");
+    logMessage("Recebido: " . $input);
     
-    // Extrai o número para usar como identificador
-    $phoneNumber = extractPhoneNumber($from);
-
-    // Evita responder mensagens enviadas por ele mesmo
-    if (!$isFromMe) {
-        // Verifica se é um comando especial primeiro
-        $reply = handleSpecialCommands($body, $phoneNumber);
-        
-        // Se não é comando especial, chama a Gemini
-        if ($reply === null) {
-            $reply = callGeminiAI($body);
-            
-            // Adiciona assinatura do autor
-            $reply .= "\n\n---\n*Assistente IA criado por Milton Diogo*";
-        }
-
-        // Envia resposta pelo WAHA
-        $wahaUrl = "https://waha-bot-8dux.onrender.com/api/sendText";
-        $payload = [
-            "session" => "default",
-            "chatId" => $from,
-            "text" => $reply,
-        ];
-
-        $ch = curl_init($wahaUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json"]);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10); // Timeout de 10 segundos
-        $resp = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        file_put_contents($logFile, date("Y-m-d H:i:s") . " - WAHA HTTP Code: " . $httpCode . "\n", FILE_APPEND);
-        file_put_contents($logFile, date("Y-m-d H:i:s") . " - WAHA Response: " . $resp . "\n", FILE_APPEND);
-        file_put_contents($logFile, date("Y-m-d H:i:s") . " - Resposta enviada para $phoneNumber: " . substr($reply, 0, 100) . "...\n", FILE_APPEND);
+    if (empty($input)) {
+        http_response_code(400);
+        echo "Empty payload";
+        exit;
     }
+    
+    $data = json_decode($input, true);
+    if (!$data || !isset($data["event"])) {
+        http_response_code(400);
+        echo "Invalid payload";
+        exit;
+    }
+
+    // Processa apenas eventos de mensagem
+    if ($data["event"] === "message") {
+        $from = $data["payload"]["from"] ?? "";
+        $body = $data["payload"]["body"] ?? "";
+        $isFromMe = $data["payload"]["fromMe"] ?? false;
+        
+        // Extrai o número para usar como identificador
+        $phoneNumber = extractPhoneNumber($from);
+
+        // Evita responder mensagens enviadas por ele mesmo
+        if (!$isFromMe) {
+            // Verifica se é um comando especial primeiro
+            $reply = handleSpecialCommands($body, $phoneNumber);
+            
+            // Se não é comando especial, chama a Gemini
+            if ($reply === null) {
+                $reply = callGeminiAI($body);
+                
+                // Adiciona assinatura do autor
+                $reply .= "\n\n---\n*Assistente IA criado por Milton Diogo*";
+            }
+
+            // Envia resposta pelo WAHA
+            sendWahaMessage($from, $reply, $phoneNumber);
+        }
+    }
+
+    http_response_code(200);
+    echo "OK";
+    
+} catch (Exception $e) {
+    logMessage("ERRO GRAVE: " . $e->getMessage());
+    http_response_code(500);
+    echo "Internal Server Error";
 }
-
-http_response_code(200);
-echo "OK";
-
 // ----------------------------
 // Funções auxiliares
 
@@ -99,7 +101,7 @@ function handleSpecialCommands($message, $phoneNumber) {
         case '/sobre':
         case 'sobre':
             return "🤖 *Sobre mim:*\n\n".
-                   "Eu sou um assistente virtual!\n".
+                   "Eu sou um assistente virtual inteligente baseado na Gemini AI!\n".
                    "Fui desenvolvido para responder perguntas e ajudar com informações diversas.\n\n".
                    "Versão: 1.0\n".
                    "Criador: Milton Diogo";
@@ -109,22 +111,56 @@ function handleSpecialCommands($message, $phoneNumber) {
             return "👨‍💻 *Meu criador:*\n\n".
                    "Fui desenvolvido pelo Milton Diogo como projeto de chatbot WhatsApp.\n".
                    "Estou sempre evoluindo com novas funcionalidades!\n\n".
-                   "Entre em contato: mwmprogramador@gmai.com ou 959642430";
+                   "Entre em contato: mwmprogramador@gmail.com ou 959642430";
             
         default:
             return null; // Não é um comando especial
     }
 }
 
+function sendWahaMessage($chatId, $message, $phoneNumber) {
+    $wahaUrl = "https://waha-bot-8dux.onrender.com/api/sendText";
+    $payload = [
+        "session" => "default",
+        "chatId" => $chatId,
+        "text" => $message,
+    ];
+
+    $ch = curl_init($wahaUrl);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($payload),
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_FAILONERROR => true
+    ]);
+    
+    $resp = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error = curl_error($ch);
+    curl_close($ch);
+
+    logMessage("WAHA HTTP Code: " . $httpCode);
+    logMessage("WAHA Response: " . $resp);
+    logMessage("Resposta enviada para $phoneNumber: " . substr($message, 0, 100) . "...");
+    
+    if ($error) {
+        logMessage("ERRO WAHA: " . $error);
+    }
+}
+
 // Função para chamar a API Gemini 2.5 Flash via REST
 function callGeminiAI($message) {
-    $apiKey = "AIzaSyD7DTONO7vq9jws-pIihvoiQd4RI03pRTU"; // <-- coloque sua key
+    $apiKey = "AIzaSyD7DTONO7vq9jws-pIihvoiQd4RI03pRTU";
     $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
     // Personalidade do assistente
     $systemInstruction = "Você é um assistente prestativo chamado 'AssistenteIA'. " .
                          "Responda de forma amigável e concisa. Use emojis ocasionalmente. " .
-                         "Se não souber algo, admita honestamente. Mantenha respostas em português.";
+                         "Se não souber algo, admita honestamente. Mantenha respostas em português. " .
+                         "Seja direto e objetivo nas respostas.";
 
     // Monta JSON no padrão oficial da Gemini
     $data = [
@@ -144,51 +180,54 @@ function callGeminiAI($message) {
             "temperature" => 0.7,
             "topK" => 40,
             "topP" => 0.95,
-            "maxOutputTokens" => 1024,
+            "maxOutputTokens" => 800, // Reduzido para respostas mais curtas
         ]
     ];
 
     $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        "Content-Type: application/json",
-        "x-goog-api-key: $apiKey"
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            "Content-Type: application/json",
+            "x-goog-api-key: $apiKey"
+        ],
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_FAILONERROR => true
     ]);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    curl_setopt($ch, CURLOPT_TIMEOUT, 15); // Timeout de 15 segundos
+    
     $resp = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlError = curl_error($ch);
+    $error = curl_error($ch);
     curl_close($ch);
 
-    // Log completo para debug
-    $logFile = __DIR__ . "/webhook_log.txt";
-    file_put_contents($logFile, date("Y-m-d H:i:s") . " - Gemini HTTP Code: " . $httpCode . "\n", FILE_APPEND);
+    logMessage("Gemini HTTP Code: " . $httpCode);
     
-    if ($curlError) {
-        file_put_contents($logFile, date("Y-m-d H:i:s") . " - Gemini cURL Error: " . $curlError . "\n", FILE_APPEND);
+    if ($error) {
+        logMessage("Gemini cURL Error: " . $error);
         return "Desculpe, estou com dificuldades técnicas no momento. Por favor, tente novamente em alguns instantes.";
     }
     
     // Log truncado para não lotar o arquivo
     $respLog = strlen($resp) > 500 ? substr($resp, 0, 500) . "..." : $resp;
-    file_put_contents($logFile, date("Y-m-d H:i:s") . " - Gemini raw response: " . $respLog . "\n", FILE_APPEND);
+    logMessage("Gemini raw response: " . $respLog);
 
     $json = json_decode($resp, true);
 
     // Verifica se há erro na resposta
     if (isset($json['error'])) {
-        file_put_contents($logFile, date("Y-m-d H:i:s") . " - Gemini error: " . $json['error']['message'] . "\n", FILE_APPEND);
+        logMessage("Gemini error: " . $json['error']['message']);
         return "Desculpe, estou com problemas técnicos no momento. Por favor, tente novamente mais tarde.";
     }
 
-    // Extrai o texto retornado pela Gemini (estrutura correta conforme documentação)
+    // Extrai o texto retornado pela Gemini
     if (isset($json['candidates'][0]['content']['parts'][0]['text'])) {
         return $json['candidates'][0]['content']['parts'][0]['text'];
     }
 
     // Log de estrutura inesperada para debug
-    file_put_contents($logFile, date("Y-m-d H:i:s") . " - Estrutura inesperada: " . substr(print_r($json, true), 0, 500) . "\n", FILE_APPEND);
+    logMessage("Estrutura inesperada: " . substr(print_r($json, true), 0, 500));
     return "Desculpe, não consegui processar sua solicitação. Poderia reformular sua pergunta?";
 }
