@@ -17,41 +17,23 @@ if (!$data || !isset($data["event"])) {
 // Processa apenas eventos de mensagem
 if ($data["event"] === "message") {
     $from = $data["payload"]["from"] ?? "";
-    $body = trim($data["payload"]["body"] ?? "");
-    $senderName = $data["payload"]["senderName"] ?? "Usuário";
+    $body = $data["payload"]["body"] ?? "";
+    $isFromMe = $data["payload"]["fromMe"] ?? false;
+    
+    // Extrai o número para usar como identificador
+    $phoneNumber = extractPhoneNumber($from);
 
     // Evita responder mensagens enviadas por ele mesmo
-    if (!($data["payload"]["fromMe"] ?? false)) {
+    if (!$isFromMe) {
+        // Verifica se é um comando especial primeiro
+        $reply = handleSpecialCommands($body, $phoneNumber);
         
-        // Comandos especiais
-        if ($body === "/start" || $body === "oi" || $body === "olá" || $body === "ola") {
-            $reply = "Olá $senderName! 👋 Eu sou o AssistenteIA, criado por Milton Diogo. Como posso ajudar você hoje?";
-        } 
-        elseif ($body === "/ajuda" || $body === "ajuda" || $body === "help") {
-            $reply = "🤖 *Comandos disponíveis:*\n\n".
-                     "• /start - Iniciar conversa\n".
-                     "• /ajuda - Ver esta mensagem\n".
-                     "• /sobre - Informações sobre mim\n".
-                     "• /criador - Quem me desenvolveu\n\n".
-                     "Ou simplemente faça uma pergunta e eu tentarei ajudar!";
-        }
-        elseif ($body === "/sobre" || $body === "sobre") {
-            $reply = "🤖 *Sobre mim:*\n\n".
-                     "Eu sou um assistente virtual inteligente baseado na tecnologia Gemini AI 2.5 Flash.\n".
-                     "Fui desenvolvido para responder perguntas e ajudar com informações diversas.\n\n".
-                     "Versão: 1.0";
-        }
-        elseif ($body === "/criador" || $body === "criador") {
-            $reply = "👨‍💻 *Meu criador:*\n\n".
-                     "Fui desenvolvido por Milton Diogo como projeto de chatbot WhatsApp.\n".
-                     "Estou sempre evoluindo com novas funcionalidades!";
-        }
-        else {
-            // Chama a Gemini para outras mensagens
-            $reply = callGeminiAI($body, $senderName);
+        // Se não é comando especial, chama a Gemini
+        if ($reply === null) {
+            $reply = callGeminiAI($body);
             
-            // Adiciona assinatura no final de cada resposta
-            $reply .= "\n\n---\n_Respondido por AssistenteIA_";
+            // Adiciona assinatura do autor
+            $reply .= "\n\n---\n*Assistente IA criado por [Seu Nome]*";
         }
 
         // Envia resposta pelo WAHA
@@ -67,13 +49,14 @@ if ($data["event"] === "message") {
         curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json"]);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10); // Timeout de 10 segundos
         $resp = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
         file_put_contents($logFile, date("Y-m-d H:i:s") . " - WAHA HTTP Code: " . $httpCode . "\n", FILE_APPEND);
         file_put_contents($logFile, date("Y-m-d H:i:s") . " - WAHA Response: " . $resp . "\n", FILE_APPEND);
-        file_put_contents($logFile, date("Y-m-d H:i:s") . " - Resposta enviada para $senderName: " . substr($reply, 0, 100) . "...\n", FILE_APPEND);
+        file_put_contents($logFile, date("Y-m-d H:i:s") . " - Resposta enviada para $phoneNumber: " . substr($reply, 0, 100) . "...\n", FILE_APPEND);
     }
 }
 
@@ -81,15 +64,67 @@ http_response_code(200);
 echo "OK";
 
 // ----------------------------
+// Funções auxiliares
+
+function extractPhoneNumber($from) {
+    // Remove @c.us e outros sufixos para obter apenas o número
+    return preg_replace('/@.*/', '', $from);
+}
+
+function handleSpecialCommands($message, $phoneNumber) {
+    $message = strtolower(trim($message));
+    
+    switch ($message) {
+        case '/start':
+        case 'iniciar':
+        case 'oi':
+        case 'olá':
+        case 'ola':
+            return "Olá! 👋 Eu sou um assistente virtual inteligente.\n\n".
+                   "Digite /ajuda para ver os comandos disponíveis.\n".
+                   "Digite /sobre para saber mais sobre mim.\n".
+                   "Ou faça qualquer pergunta que eu tentarei ajudar!\n\n".
+                   "*Desenvolvido por [Seu Nome]*";
+            
+        case '/ajuda':
+        case 'ajuda':
+        case 'help':
+            return "🤖 *Comandos disponíveis:*\n\n".
+                   "• /start - Iniciar conversa\n".
+                   "• /ajuda - Ver esta mensagem\n".
+                   "• /sobre - Informações sobre mim\n".
+                   "• /criador - Quem me desenvolveu\n\n".
+                   "Ou simplemente faça uma pergunta e eu tentarei ajudar!";
+            
+        case '/sobre':
+        case 'sobre':
+            return "🤖 *Sobre mim:*\n\n".
+                   "Eu sou um assistente virtual baseado na tecnologia Gemini AI 2.5 Flash.\n".
+                   "Fui desenvolvido para responder perguntas e ajudar com informações diversas.\n\n".
+                   "Versão: 1.0\n".
+                   "Criador: [Seu Nome]";
+            
+        case '/criador':
+        case 'criador':
+            return "👨‍💻 *Meu criador:*\n\n".
+                   "Fui desenvolvido por [Seu Nome] como projeto de chatbot WhatsApp.\n".
+                   "Estou sempre evoluindo com novas funcionalidades!\n\n".
+                   "Entre em contato: [seu-email@exemplo.com]";
+            
+        default:
+            return null; // Não é um comando especial
+    }
+}
+
 // Função para chamar a API Gemini 2.5 Flash via REST
-function callGeminiAI($message, $userName) {
-    $apiKey = "AIzaSyD7DTONO7vq9jws-pIihvoiQd4RI03pRTU";
+function callGeminiAI($message) {
+    $apiKey = "AIzaSyD7DTONO7vq9jws-pIihvoiQd4RI03pRTU"; // <-- coloque sua key
     $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
     // Personalidade do assistente
-    $systemInstruction = "Você é um assistente prestativo chamado 'AssistenteIA', criado por [Seu Nome]. " .
-                         "Responda de forma amigável e concisa. Use emojis ocasionalmente para tornar a conversa mais amigável. " .
-                         "Se não souber algo, admita honestamente. Mantenha respostas preferencialmente em português.";
+    $systemInstruction = "Você é um assistente prestativo chamado 'AssistenteIA'. " .
+                         "Responda de forma amigável e concisa. Use emojis ocasionalmente. " .
+                         "Se não souber algo, admita honestamente. Mantenha respostas em português.";
 
     // Monta JSON no padrão oficial da Gemini
     $data = [
@@ -101,7 +136,7 @@ function callGeminiAI($message, $userName) {
         "contents" => [
             [
                 "parts" => [
-                    ["text" => "Usuário $userName pergunta: $message"]
+                    ["text" => $message]
                 ]
             ]
         ],
@@ -121,7 +156,7 @@ function callGeminiAI($message, $userName) {
     ]);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30); // Timeout de 30 segundos
+    curl_setopt($ch, CURLOPT_TIMEOUT, 15); // Timeout de 15 segundos
     $resp = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curlError = curl_error($ch);
@@ -148,7 +183,7 @@ function callGeminiAI($message, $userName) {
         return "Desculpe, estou com problemas técnicos no momento. Por favor, tente novamente mais tarde.";
     }
 
-    // Extrai o texto retornado pela Gemini
+    // Extrai o texto retornado pela Gemini (estrutura correta conforme documentação)
     if (isset($json['candidates'][0]['content']['parts'][0]['text'])) {
         return $json['candidates'][0]['content']['parts'][0]['text'];
     }
