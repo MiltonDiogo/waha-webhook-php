@@ -84,7 +84,7 @@ function handleSpecialCommands($message, $phoneNumber) {
                    "Digite /ajuda para ver os comandos disponíveis.\n".
                    "Digite /sobre para saber mais sobre mim.\n".
                    "Ou faça qualquer pergunta que eu tentarei ajudar!\n\n".
-                   "*Desenvolvido por [Seu Nome]*";
+                   "*Desenvolvido por Milton Diogo*";
             
         case '/ajuda':
         case 'ajuda':
@@ -99,17 +99,17 @@ function handleSpecialCommands($message, $phoneNumber) {
         case '/sobre':
         case 'sobre':
             return "🤖 *Sobre mim:*\n\n".
-                   "Eu sou um assistente virtual baseado na tecnologia Gemini AI 2.5 Flash.\n".
+                   "Eu sou um assistente virtual!\n".
                    "Fui desenvolvido para responder perguntas e ajudar com informações diversas.\n\n".
                    "Versão: 1.0\n".
-                   "Criador: [Seu Nome]";
+                   "Criador: Milton Diogo";
             
         case '/criador':
         case 'criador':
             return "👨‍💻 *Meu criador:*\n\n".
-                   "Fui desenvolvido por [Seu Nome] como projeto de chatbot WhatsApp.\n".
+                   "Fui desenvolvido por Milton Diogo como projeto de chatbot WhatsApp.\n".
                    "Estou sempre evoluindo com novas funcionalidades!\n\n".
-                   "Entre em contato: [seu-email@exemplo.com]";
+                   "Entre em contato: mwmprogramador@gmai.com";
             
         default:
             return null; // Não é um comando especial
@@ -192,3 +192,4 @@ function callGeminiAI($message) {
     file_put_contents($logFile, date("Y-m-d H:i:s") . " - Estrutura inesperada: " . substr(print_r($json, true), 0, 500) . "\n", FILE_APPEND);
     return "Desculpe, não consegui processar sua solicitação. Poderia reformular sua pergunta?";
 }
+
