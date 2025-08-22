@@ -41,7 +41,7 @@ if ($data["event"] === "message") {
             
             // Adiciona assinatura do autor (apenas na primeira mensagem da conversa)
             if (empty($context['conversation'])) {
-                $reply .= "\n\n---\n*Assistente IA criado por [Seu Nome]*";
+                $reply .= "\n\n---\n*Assistente IA criado por Milton Diogo*";
             }
         }
 
@@ -57,7 +57,7 @@ if ($data["event"] === "message") {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json"]);
         curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFELDS, json_encode($payload));
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
         $resp = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -170,7 +170,7 @@ function handleSpecialCommands($message, $phoneNumber, $context) {
                    "Digite /ajuda para ver os comandos disponíveis.\n".
                    "Digite /sobre para saber mais sobre mim.\n".
                    "Ou faça qualquer pergunta que eu tentarei ajudar!\n\n".
-                   "*Desenvolvido por [Seu Nome]*";
+                   "*Desenvolvido por Milton Diogo*";
             
         case '/ajuda':
         case 'ajuda':
@@ -189,14 +189,15 @@ function handleSpecialCommands($message, $phoneNumber, $context) {
                    "Eu sou um assistente virtual baseado na tecnologia Gemini AI 2.5 Flash.\n".
                    "Fui desenvolvido para responder perguntas e ajudar com informações diversas.\n\n".
                    "Versão: 1.0\n".
-                   "Criador: [Seu Nome]";
+                   "Criador: Milton Diogo";
             
         case '/criador':
         case 'criador':
             return "👨‍💻 *Meu criador:*\n\n".
-                   "Fui desenvolvido por [Seu Nome] como projeto de chatbot WhatsApp.\n".
+                   "Fui desenvolvido por Milton Diogo como projeto de chatbot WhatsApp.\n".
                    "Estou sempre evoluindo com novas funcionalidades!\n\n".
-                   "Entre em contato: [seu-email@exemplo.com]";
+                   "Email: mwmprogramador@gmail.com\n".
+                   "Celular: 959642430";
             
         case '/limpar':
         case 'limpar':
