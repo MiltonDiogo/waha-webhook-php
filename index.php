@@ -85,7 +85,8 @@ function callGeminiAI($message) {
         return $json['output'][0]['content'][0]['text'];
     }
 
-    return "Desculpe, não entendi.";
+    return "Desenvolvendo ";
 }
+
 
 
